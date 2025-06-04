@@ -2,7 +2,7 @@ fastapi
 uvicorn[standard]
 pydantic
 groq
-pinecone-client
+pinecone
 requests
 python-multipart
 jinja2 
