@@ -4,6 +4,7 @@ import requests
 import re
 import logging
 import os
+import time # Added for optional sleep after index creation
 from groq import Groq
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -49,16 +50,19 @@ EMBEDDING_DIM = 3072  # Match your Pinecone index dimension
 # Initialize Groq Client
 groq_client = Groq(api_key=GROQ_API_KEY)
 
-# Load Company Documents
-# try:
-#     with open('extracted_articles_cleaned_three_one.json', 'r', encoding='utf-8') as f:
-#         documents = json.load(f)
-#     logger.info(f"Successfully loaded {len(documents)} documents")
-# except Exception as e:
-#     logger.error(f"Error loading documents: {str(e)}")
-#     documents = []
-documents = [] # Initialize as empty list
-logger.info("Document loading from JSON is disabled for deployed app. Data should be in Pinecone.")
+# Load Company Documents (re-enabled for demo)
+documents = []
+try:
+    # Try to load documents if the file exists
+    with open('extracted_articles_cleaned_three_one.json', 'r', encoding='utf-8') as f:
+        documents = json.load(f)
+    logger.info(f"Successfully loaded {len(documents)} documents from JSON file")
+except FileNotFoundError:
+    logger.warning("Document file not found - running without local documents. Relying on Pinecone data.")
+    documents = []
+except Exception as e:
+    logger.error(f"Error loading documents: {str(e)} - continuing without local documents")
+    documents = []
 
 
 def get_embedding(text):
@@ -112,27 +116,61 @@ def get_embedding(text):
 # Initialize Pinecone with better error handling
 pc = None
 index = None
+pinecone_available = False # Initialize as False here
 
 def initialize_pinecone():
-    """Initialize Pinecone connection with error handling"""
-    global pc, index
+    """
+    Initialize Pinecone connection and perform initial seeding if needed.
+    This function ensures the index is created (if it doesn't exist)
+    and populates it with documents ONLY IF the index is empty.
+    """
+    global pc, index, pinecone_available # Ensure these are updated globally
     try:
         pc = Pinecone(api_key=PINECONE_API_KEY)
-        if INDEX_NAME not in pc.list_indexes().names():
+        
+        # Check if index exists
+        index_exists = INDEX_NAME in pc.list_indexes().names()
+
+        if not index_exists:
+            logger.info(f"Pinecone index '{INDEX_NAME}' not found, creating it...")
             pc.create_index(
                 name=INDEX_NAME,
                 dimension=EMBEDDING_DIM,
                 metric="cosine",
                 spec=ServerlessSpec(cloud="aws", region="us-east-1")
             )
-        index = pc.Index(INDEX_NAME)
-        logger.info(f"Successfully initialized Pinecone index")
+            # Give Pinecone a moment to create the index (optional, but can help)
+            time.sleep(1) 
+            
+        # Connect to the Pinecone index (whether newly created or existing)
+        index = pc.Index(INDEX_NAME) 
+        logger.info(f"Successfully connected to Pinecone index '{INDEX_NAME}'")
+
+        # Check if the index is empty AND if local documents are loaded
+        stats = index.describe_index_stats()
+        vector_count = stats.get('total_vector_count', 0)
+        
+        if vector_count == 0 and documents: # Condition to trigger an upload
+            logger.warning(f"Pinecone index '{INDEX_NAME}' is empty but local documents exist ({len(documents)}). Attempting initial seeding...")
+            upsert_documents() # Call the upsert function to populate Pinecone
+            logger.info("Initial seeding of Pinecone completed.")
+            # Re-check stats after seeding
+            stats = index.describe_index_stats()
+            vector_count = stats.get('total_vector_count', 0)
+            logger.info(f"Pinecone index now contains {vector_count} vectors.")
+        elif vector_count > 0: # Condition for direct connection (no upload needed)
+            logger.info(f"Pinecone index '{INDEX_NAME}' already contains {vector_count} vectors. Skipping initial seeding.")
+        else: # Pinecone connected, but no local docs to seed even if empty
+            logger.info("Pinecone index initialized but no local documents were found to seed.")
+
+        pinecone_available = True # Set the global flag to indicate Pinecone is ready
         return True
     except Exception as e:
         logger.error(f"Error initializing Pinecone: {str(e)}")
+        pinecone_available = False # Set the global flag to indicate Pinecone is not ready
         return False
 
-# Try to initialize Pinecone, but don't crash if it fails
+# This line calls the initialization function when the application starts
 pinecone_available = initialize_pinecone()
 
 
@@ -187,13 +225,14 @@ def retrieve_documents(query, top_k=7):
     Retrieves documents from Pinecone based on query embedding
     """
     try:
+        # This is the core part that "runs directly from Pinecone"
         if not pinecone_available or index is None:
             logger.warning("Pinecone not available, returning empty results")
             return [], []
             
         query_vector = get_embedding(query)
         if not isinstance(query_vector, list):
-            query_vector = query_vector.tolist()
+            query_vector = query_vector.tolist() # Ensure it's a list for Pinecone query
 
         query_response = index.query(
             vector=query_vector,
@@ -404,15 +443,48 @@ async def chat(chat_message: ChatMessage):
 
         logger.info(f"Received chat request: {chat_message.message[:100]}...")
 
+        # Check if Pinecone is available before processing
+        if not pinecone_available:
+            return JSONResponse(
+                status_code=200, # Using 200 with an error message in body for user-friendly display
+                content={
+                    "response": "عذراً، الخدمة غير متاحة حالياً. يرجى المحاولة مرة أخرى لاحقاً.",
+                    "reference": "",
+                    "error": "Pinecone service unavailable"
+                }
+            )
+
         # First, classify the query
-        query_type = await classify_query(chat_message.message)
-        logger.info(f"Query classified as: {query_type}")
+        try:
+            query_type = await classify_query(chat_message.message)
+            logger.info(f"Query classified as: {query_type}")
+        except Exception as e:
+            logger.error(f"Error in query classification: {str(e)}")
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "response": "عذراً، حدث خطأ في تصنيف الاستفسار. يرجى المحاولة مرة أخرى.",
+                    "reference": "",
+                    "error": f"Classification error: {str(e)}"
+                }
+            )
 
         # Process based on classification
-        if query_type == "safe":
-            answer_data = await safe_generate_answer(chat_message.message)
-        else:  # "NS"
-            answer_data = await NS_generate_answer(chat_message.message)
+        try:
+            if query_type == "safe":
+                answer_data = await safe_generate_answer(chat_message.message)
+            else:  # "NS"
+                answer_data = await NS_generate_answer(chat_message.message)
+        except Exception as e:
+            logger.error(f"Error in answer generation: {str(e)}")
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "response": "عذراً، حدث خطأ أثناء إنتاج الإجابة. يرجى المحاولة مرة أخرى.",
+                    "reference": "",
+                    "error": f"Answer generation error: {str(e)}"
+                }
+            )
 
         if "error" in answer_data:
             logger.error(f"Error in processing: {answer_data['error']}")
@@ -425,14 +497,16 @@ async def chat(chat_message: ChatMessage):
         answer_data["query_type"] = query_type
         return answer_data
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Unexpected error in chat endpoint: {str(e)}")
         return JSONResponse(
             status_code=200,
             content={
-                "response": "عذراً، حدث خطأ أثناء معالجة طلبك. يرجى المحاولة مرة أخرى.",
+                "response": "عذراً، حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى.",
                 "reference": "",
-                "error": str(e)
+                "error": f"Unexpected error: {str(e)}"
             }
         )
 
@@ -440,15 +514,25 @@ async def chat(chat_message: ChatMessage):
 @app.post("/api/reindex")
 async def reindex():
     """
-    Endpoint to force reindexing of all documents
+    Endpoint to force reindexing of all documents.
+    This will delete all existing vectors and re-upsert.
     """
     try:
-        logger.info("Starting reindexing process")
-        # Delete all vectors from the index
+        if not pinecone_available or index is None:
+            raise HTTPException(status_code=503, detail="Pinecone service unavailable")
+
+        logger.info("Starting reindexing process: Deleting all existing vectors...")
         index.delete(delete_all=True)
+        logger.info("Existing vectors deleted. Reinserting documents...")
         # Reinsert with new vectorization
         upsert_documents()
-        return {"status": "success", "message": "Reindexing completed"}
+        
+        # Get updated stats
+        stats = index.describe_index_stats()
+        vector_count = stats.get('total_vector_count', 0)
+        logger.info(f"Reindexing completed. Total vectors in index: {vector_count}")
+
+        return {"status": "success", "message": f"Reindexing completed. Total vectors: {vector_count}"}
     except Exception as e:
         logger.error(f"Error during reindexing: {str(e)}")
         return {"status": "error", "message": str(e)}
@@ -461,7 +545,6 @@ async def read_root(request: Request):
 @app.get("/chat", response_class=HTMLResponse)
 async def read_root(request: Request):
     return templates.TemplateResponse("cleT.html", {"request": request})
-
 
 
 @app.get("/api/documents")
@@ -481,11 +564,25 @@ async def debug_status():
     Endpoint for debugging system status
     """
     try:
-        # Simplified debug info to avoid potential crashes
+        # Check Pinecone vector count
+        pinecone_vectors = 0
+        pinecone_status = "unavailable"
+        
+        if pinecone_available and index is not None:
+            try:
+                stats = index.describe_index_stats()
+                pinecone_vectors = stats.get('total_vector_count', 0)
+                pinecone_status = "connected"
+            except Exception as e:
+                logger.error(f"Error getting Pinecone stats: {str(e)}")
+                pinecone_status = f"error: {str(e)}"
+        
         return {
             "status": "running",
-            "documents_loaded": len(documents),
+            "documents_loaded": len(documents), # This is local memory, not Pinecone
             "pinecone_available": pinecone_available,
+            "pinecone_status": pinecone_status,
+            "pinecone_vectors_in_index": pinecone_vectors,
             "message": "Debug endpoint working"
         }
     except Exception as e:
@@ -501,6 +598,36 @@ async def health_check():
 async def test_endpoint():
     """Test endpoint to verify basic functionality"""
     return {"message": "API is working", "endpoints": ["health", "api/test", "api/chat", "debug"]}
+
+
+@app.post("/api/seed-pinecone")
+async def seed_pinecone():
+    """
+    Endpoint to manually seed Pinecone with documents (for demo purposes or initial population).
+    This will upsert documents without deleting existing ones.
+    """
+    try:
+        if not pinecone_available:
+            raise HTTPException(status_code=503, detail="Pinecone not available")
+        
+        if len(documents) == 0:
+            return {"status": "error", "message": "No local documents loaded to seed"}
+        
+        logger.info(f"Starting to seed Pinecone with {len(documents)} documents (this will add/update, not delete)")
+        upsert_documents()
+        
+        # Get updated stats
+        stats = index.describe_index_stats()
+        vector_count = stats.get('total_vector_count', 0)
+        
+        return {
+            "status": "success", 
+            "message": f"Successfully seeded Pinecone with {len(documents)} documents",
+            "total_vectors_in_index": vector_count
+        }
+    except Exception as e:
+        logger.error(f"Error seeding Pinecone: {str(e)}")
+        return {"status": "error", "message": str(e)}
 
 
 if __name__ == "__main__":

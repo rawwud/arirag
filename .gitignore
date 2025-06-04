@@ -149,7 +149,9 @@ cython_debug/
 # .detaignore # We have a specific .detaignore for Deta deployments
 
 # Large data files (you might want to keep some, but exclude large ones)
-*.json # This was in your .detaignore, let's add it here too for consistency unless a specific .json is needed in repo
+# *.json # Temporarily commented out for demo - allowing data file to be committed
+articles_modified-CleandEND.json
+# Keep extracted_articles_cleaned_three_one.json for demo
 *.data
 *.csv
 *.db
