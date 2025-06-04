@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+pydantic
+groq
+pinecone-client
+requests
+python-multipart
+jinja2 

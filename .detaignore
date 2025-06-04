@@ -1,0 +1,11 @@
+*.json
+.idea/
+__pycache__/
+*.pyc
+*.tmp
+*.bak
+*.swp
+
+# If you have a virtual environment folder, add it here e.g.:
+# venv/
+# .venv/ 

@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grail-D</title>
+    <style>
+        /* Previous styles remain the same until chat input section */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            height: 100%;
+        }
+
+        /* Previous container and sidebar styles remain the same */
+        .container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            width: 256px;
+            border-right: 1px solid #e5e7eb;
+            background-color: white;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .logo {
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .logo-icon {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border: 1px solid #e5e7eb;
+        }
+
+        .logo-text {
+            font-weight: 500;
+        }
+
+        .nav {
+            margin-top: 24px;
+        }
+
+        .nav a {
+            display: flex;
+            padding: 8px 16px;
+            font-size: 14px;
+            color: #4b5563;
+            text-decoration: none;
+        }
+
+        .nav a:hover {
+            background-color: #f3f4f6;
+        }
+
+        .separator {
+            margin: 16px 0;
+            border: none;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        /* Updated main content styles */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            height: 56px;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            gap: 16px;
+        }
+
+        .tab-button {
+            padding: 8px 16px;
+            font-size: 14px;
+            border-radius: 6px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .tab-button:hover, .tab-button.active {
+            background-color: #f3f4f6;
+        }
+
+        .more-options {
+            margin-left: auto;
+            padding: 8px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            border-radius: 6px;
+        }
+
+        .more-options:hover {
+            background-color: #f3f4f6;
+        }
+
+        /* New homepage specific styles */
+        .main {
+            flex: 1;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 24px;
+        }
+
+        .main-heading {
+            font-size: 32px;
+            margin-bottom: 0px;
+            color: #333;
+            position: relative;
+            z-index: 2;
+
+        }
+
+        .search-container {
+            position: relative;
+            width: 100%;
+            max-width: 670px;
+            z-index: 2;
+        }
+
+        .search-form {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            background: white;
+            padding: 12px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .message-input {
+            flex-grow: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            font-size: 16px;
+            line-height: 1.5;
+            outline: none;
+            resize: none;
+            background-color: transparent;
+            min-height: 60px;
+            max-height: 70px;
+            height: 100%;
+            display: block;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .message-input:focus {
+            background-color: #ffffff;
+        }
+
+        .message-input::placeholder {
+            color: #6b7280;
+        }
+
+        .button-container {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 8px;
+            flex-direction: row-reverse;
+        }
+
+        .submit-button {
+            padding: 8px 16px;
+            background-color: #1F1F1F;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            height: fit-content;
+            align-self: flex-end;
+        }
+
+        .submit-button:hover {
+            background-color: #374151;
+        }
+
+        .upload-button {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: none;
+            border: none;
+            font-size: 14px;
+            color: #6b7280;
+            cursor: pointer;
+        }
+
+        .shortcut {
+            font-size: 12px;
+            color: #9ca3af;
+            margin-left: 4px;
+            opacity: 0.8;
+        }
+
+        .suggestions {
+            display: flex;
+            gap: 12px;
+            margin-top: 16px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .suggestion-button {
+            padding: 8px 16px;
+            border-radius: 999px;
+            border: 1px solid #e5e7eb;
+            background: white;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .suggestion-button:hover {
+            background-color: #f3f4f6;
+            border-color: #d1d5db;
+        }
+
+        .disclaimer {
+            position: absolute;
+            bottom: -77px;
+            width: 100%;
+            text-align: center;
+            font-size: 0.75rem;
+            color: #666;
+            padding: 0 20px;
+            box-sizing: border-box;
+            opacity: 0.8
+        }
+
+        .user-info {
+            margin-top: auto;
+            padding: 16px;
+        }
+
+        .username {
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .org-name {
+            font-size: 12px;
+            color: #6b7280;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div>
+                <div class="logo">
+                    <div class="logo-icon"></div>
+                    <span class="logo-text">Grail-D</span>
+                </div>
+
+                <nav class="nav">
+                    <a href="#">Home</a>
+                    <a href="#">Database</a>
+                    <a href="#">Organazation</a>
+                    <a href="#">Collections</a>
+                    <hr class="separator">
+                </nav>
+            </div>
+            <div class="user-info">
+                <div class="username">Username</div>
+                <div class="org-name">Org name</div>
+            </div>
+        </aside>
+
+        <!-- Main content -->
+        <div class="main-content">
+            <header class="header">
+                <nav>
+                    <button class="tab-button">Compoduim</button>
+                    <button class="tab-button active">Platform</button>
+                </nav>
+                <button class="more-options">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+                </button>
+            </header>
+            <main class="main">
+                <h1 class="main-heading">How Can I Help You ?</h1>
+                <div class="search-container">
+                    <form class="search-form">
+                        <textarea
+                            class="message-input"
+                            placeholder="Ask Grail a question..."
+                            rows="1"
+                        ></textarea>
+                        <div class="button-container">
+                            <button type="submit" class="submit-button">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <line x1="12" y1="19" x2="12" y2="5"></line>
+                                    <polyline points="5 12 12 5 19 12"></polyline>
+                                </svg>
+                                Send
+                                <span class="shortcut">⌘↵</span>
+                            </button>
+                            <button type="button" class="upload-button">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                    <polyline points="17 8 12 3 7 8"/>
+                                    <line x1="12" x2="12" y1="3" y2="15"/>
+                                </svg>
+                                upload data
+                            </button>
+                        </div>
+                    </form>
+                    <div class="suggestions">
+                        <button class="suggestion-button">Help me write</button>
+                        <button class="suggestion-button">Write a document</button>
+                        <button class="suggestion-button">Analyze data</button>
+                        <button class="suggestion-button">Brainstorm</button>
+                    </div>
+                    <p class="disclaimer">
+                        Data is sourced and analyzed by Grail. Verify important details, as occasional inaccuracies may occur.
+                    </p>
+                </div>
+            </main>
+        </div>
+    </div>
+</body>
+</html>
+
