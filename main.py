@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from pinecone import Pinecone
 from pinecone import PineconeApiException
 from typing import Optional
+from together import Together
 # from together import Together  # Removed to reduce package size
 
 # TOG_API_KEY = "4e4f7d38e1f953da9cfd545a6bab84509a52fc4a68e7c68a876eaf9373827e2a"
@@ -55,10 +56,11 @@ templates = Jinja2Templates(directory=".")
 
 # Configuration with environment variable support
 JINA_API_KEY = os.getenv("JINA_API_KEY", "jina_cf8084fc0560448e957083153b4ca7010CFW0e4PG8MUQDYvK9uAe_O5x2D1")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "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")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "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")
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY", "pcsk_LQ2ZS_BVEVWZhyeL5yGS92fTJc2sAbqqpvC7MVdXjg49efGP6AnUQPe26hpPVggwJaJUe")
 INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "testerbedtheone")
 EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", "3072"))
+TOG_API_KEY = os.getenv("TOG_API_KEY", "4e4f7d38e1f953da9cfd545a6bab84509a52fc4a68e7c68a876eaf9373827e2a")
 
 # Initialize Groq Client
 # Global variables
@@ -67,6 +69,7 @@ pc = None
 index = None
 pinecone_available = False
 groq_client = None
+tog_client = None
 
 # ============================================================================
 # CLIENT INITIALIZATION
@@ -89,6 +92,24 @@ def get_groq_client():
     if groq_client is None:
         return initialize_groq_client()
     return groq_client
+
+def initialize_tog_client():
+    """Initialize TOG client with error handling"""
+    global tog_client
+    try:
+        if tog_client is None:
+            tog_client = Together(api_key=TOG_API_KEY)
+            logger.info("TOG client initialized successfully")
+        return tog_client
+    except Exception as e:
+        logger.error(f"Error initializing TOG client: {str(e)}")
+        return None
+
+def get_tog_client():
+    """Get TOG client, initializing if needed"""
+    if tog_client is None:
+        return initialize_tog_client()
+    return tog_client
 
 # ============================================================================
 # DATA LOADING
@@ -334,12 +355,12 @@ async def safe_generate_answer(query: str) -> dict:
 async def NS_generate_answer(query: str) -> dict:
     """Generate answer with document retrieval"""
     try:
-        client = get_groq_client()
+        client = get_tog_client()
         if client is None:
             return {
                 "response": "عذراً، الخدمة غير متاحة حالياً. يرجى المحاولة مرة أخرى لاحقاً.",
                 "reference": "",
-                "error": "Groq client not available"
+                "error": "TOG client not available"
             }
             
         retrieved_titles, retrieved_contents = retrieve_documents(query, top_k=7)
@@ -363,7 +384,7 @@ async def NS_generate_answer(query: str) -> dict:
         Respond in Arabic, be concise and accurate."""
 
         response = client.chat.completions.create(
-            model="meta-llama/llama-4-scout-17b-16e-instruct",
+            model="meta-llama/Llama-4-Scout-17B-16E-Instruct",
             messages=[
                 {"role": "system", "content": "Always respond in Arabic using only the provided context."},
                 {"role": "user", "content": prompt}
