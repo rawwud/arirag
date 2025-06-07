@@ -16,7 +16,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
-from pinecone import Pinecone, ServerlessSpec
+from pinecone import Pinecone
+from pinecone.core.openapi.shared.exceptions import PineconeApiException
 from typing import Optional
 # from together import Together  # Removed to reduce package size
 
@@ -60,13 +61,34 @@ INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "testerbedtheone")
 EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", "3072"))
 
 # Initialize Groq Client
-groq_client = Groq(api_key=GROQ_API_KEY)
-
 # Global variables
 documents = []
 pc = None
 index = None
 pinecone_available = False
+groq_client = None
+
+# ============================================================================
+# CLIENT INITIALIZATION
+# ============================================================================
+
+def initialize_groq_client():
+    """Initialize Groq client with error handling"""
+    global groq_client
+    try:
+        if groq_client is None:
+            groq_client = Groq(api_key=GROQ_API_KEY)
+            logger.info("Groq client initialized successfully")
+        return groq_client
+    except Exception as e:
+        logger.error(f"Error initializing Groq client: {str(e)}")
+        return None
+
+def get_groq_client():
+    """Get Groq client, initializing if needed"""
+    if groq_client is None:
+        return initialize_groq_client()
+    return groq_client
 
 # ============================================================================
 # DATA LOADING
@@ -133,13 +155,19 @@ def initialize_pinecone() -> bool:
         pc = Pinecone(api_key=PINECONE_API_KEY)
         
         # Create index if it doesn't exist
-        if INDEX_NAME not in pc.list_indexes().names():
+        existing_indexes = [index_info.name for index_info in pc.list_indexes()]
+        if INDEX_NAME not in existing_indexes:
             logger.info(f"Creating Pinecone index '{INDEX_NAME}'...")
             pc.create_index(
                 name=INDEX_NAME,
                 dimension=EMBEDDING_DIM,
                 metric="cosine",
-                spec=ServerlessSpec(cloud="aws", region="us-east-1")
+                spec={
+                    "serverless": {
+                        "cloud": "aws",
+                        "region": "us-east-1"
+                    }
+                }
             )
             time.sleep(2)  # Wait for index creation
             
@@ -237,7 +265,12 @@ def remove_thoughts(text: str) -> str:
 async def classify_query(query: str) -> str:
     """Classify if query needs documents (NS) or can be answered directly (safe)"""
     try:
-        completion = groq_client.chat.completions.create(
+        client = get_groq_client()
+        if client is None:
+            logger.error("Groq client not available")
+            return "NS"  # Default to document retrieval
+            
+        completion = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
                 {
@@ -263,11 +296,19 @@ async def classify_query(query: str) -> str:
 async def safe_generate_answer(query: str) -> dict:
     """Generate answer without document retrieval"""
     try:
+        client = get_groq_client()
+        if client is None:
+            return {
+                "response": "عذراً، الخدمة غير متاحة حالياً. يرجى المحاولة مرة أخرى لاحقاً.",
+                "reference": "",
+                "error": "Groq client not available"
+            }
+            
         prompt = f"""You are an Arabic assistant for Al Mujtama news magazine.
         Respond in Arabic to this greeting or general question: {query}
         Keep responses friendly and brief."""
 
-        response = groq_client.chat.completions.create(
+        response = client.chat.completions.create(
             model="meta-llama/llama-4-scout-17b-16e-instruct",
             messages=[
                 {"role": "system", "content": "Always respond in Arabic, be helpful and professional."},
@@ -293,6 +334,14 @@ async def safe_generate_answer(query: str) -> dict:
 async def NS_generate_answer(query: str) -> dict:
     """Generate answer with document retrieval"""
     try:
+        client = get_groq_client()
+        if client is None:
+            return {
+                "response": "عذراً، الخدمة غير متاحة حالياً. يرجى المحاولة مرة أخرى لاحقاً.",
+                "reference": "",
+                "error": "Groq client not available"
+            }
+            
         retrieved_titles, retrieved_contents = retrieve_documents(query, top_k=7)
 
         if not retrieved_titles:
@@ -313,7 +362,7 @@ async def NS_generate_answer(query: str) -> dict:
         
         Respond in Arabic, be concise and accurate."""
 
-        response = groq_client.chat.completions.create(
+        response = client.chat.completions.create(
             model="meta-llama/llama-4-scout-17b-16e-instruct",
             messages=[
                 {"role": "system", "content": "Always respond in Arabic using only the provided context."},
@@ -526,6 +575,12 @@ async def get_documents():
 async def startup_event():
     """Application startup"""
     logger.info("Starting Al Mujtama Assistant...")
+    
+    # Initialize Groq client
+    if initialize_groq_client():
+        logger.info("Groq client initialized successfully")
+    else:
+        logger.warning("Groq client initialization failed")
     
     # Load documents
     load_documents()

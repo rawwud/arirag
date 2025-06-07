@@ -1,8 +1,9 @@
 fastapi==0.104.1
 uvicorn==0.24.0
 pydantic==2.5.0
-groq==0.4.1
-pinecone==3.0.3
+groq==0.8.0
+pinecone==5.0.1
 requests==2.31.0
 python-multipart==0.0.6
-jinja2==3.1.2 
+jinja2==3.1.2
+httpx==0.25.2 
