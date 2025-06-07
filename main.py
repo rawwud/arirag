@@ -55,7 +55,7 @@ templates = Jinja2Templates(directory=".")
 
 # Configuration with environment variable support
 JINA_API_KEY = os.getenv("JINA_API_KEY", "jina_cf8084fc0560448e957083153b4ca7010CFW0e4PG8MUQDYvK9uAe_O5x2D1")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "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")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "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")
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY", "pcsk_LQ2ZS_BVEVWZhyeL5yGS92fTJc2sAbqqpvC7MVdXjg49efGP6AnUQPe26hpPVggwJaJUe")
 INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "testerbedtheone")
 EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", "3072"))
