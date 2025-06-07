@@ -17,7 +17,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from pinecone import Pinecone
-from pinecone.core.openapi.shared.exceptions import PineconeApiException
+from pinecone import PineconeApiException
 from typing import Optional
 # from together import Together  # Removed to reduce package size
 
@@ -47,14 +47,14 @@ app.add_middleware(
 )
 
 # Initialize templating
-templates = Jinja2Templates(directory="templates")
+templates = Jinja2Templates(directory=".")
 
 # ============================================================================
 # CONFIGURATION AND SETUP
 # ============================================================================
 
 # Configuration with environment variable support
-JINA_API_KEY = os.getenv("JINA_API_KEY", "jina_0e8359e715f24fef84a308b25dd08678MDMNGM42kSPBvmP3cM7HciTovCJy")
+JINA_API_KEY = os.getenv("JINA_API_KEY", "jina_cf8084fc0560448e957083153b4ca7010CFW0e4PG8MUQDYvK9uAe_O5x2D1")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "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")
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY", "pcsk_LQ2ZS_BVEVWZhyeL5yGS92fTJc2sAbqqpvC7MVdXjg49efGP6AnUQPe26hpPVggwJaJUe")
 INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "testerbedtheone")
@@ -550,22 +550,17 @@ async def reindex():
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
     """Main page"""
-    return templates.TemplateResponse("cleT.html", {"request": request})
+    return templates.TemplateResponse("index.html", {"request": request})
 
-@app.get("/chat", response_class=HTMLResponse)
-async def chat_page(request: Request):
-    """Chat page"""
-    return templates.TemplateResponse("cleT.html", {"request": request})
 
-@app.get("/database", response_class=HTMLResponse)
-async def database_page(request: Request):
-    """Database page"""
-    return templates.TemplateResponse("Datasets.html", {"request": request})
+
+
 
 @app.get("/api/documents")
 async def get_documents():
     """Get documents info"""
     return {"message": "Direct document serving is disabled. Data is accessed via Pinecone."}
+
 
 # ============================================================================
 # STARTUP
