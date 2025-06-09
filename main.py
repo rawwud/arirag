@@ -64,7 +64,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "gsk_mcct0uZfenlB4mVarc1LWGdyb3FYP3tBXQ
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY", "pcsk_LQ2ZS_BVEVWZhyeL5yGS92fTJc2sAbqqpvC7MVdXjg49efGP6AnUQPe26hpPVggwJaJUe")
 INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "testerbedtheone")
 EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", "3072"))
-TOG_API_KEY = os.getenv("TOG_API_KEY", "4e4f7d38e1f953da9cfd545a6bab84509a52fc4a68e7c68a876eaf9373827e2a")
+TOG_API_KEY = os.getenv("TOG_API_KEY", "240f6c9b6abae24fe96f5be23060e38f76b89fd31c121f807615a3dd90385278")
 
 # Initialize Groq Client
 # Global variables
