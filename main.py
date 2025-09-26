@@ -334,7 +334,7 @@ async def safe_generate_answer(query: str) -> dict:
         Keep responses friendly and brief."""
 
         response = client.chat.completions.create(
-            model="meta-llama/llama-4-scout-17b-16e-instruct",
+            model="openai/gpt-oss-20b",
             messages=[
                 {"role": "system", "content": "Always respond in Arabic, be helpful and professional."},
                 {"role": "user", "content": prompt}
@@ -359,7 +359,7 @@ async def safe_generate_answer(query: str) -> dict:
 async def NS_generate_answer(query: str) -> dict:
     """Generate answer with document retrieval"""
     try:
-        client = get_tog_client()
+        client = get_groq_client()
         if client is None:
             return {
                 "response": "عذراً، الخدمة غير متاحة حالياً. يرجى المحاولة مرة أخرى لاحقاً.",
@@ -388,7 +388,7 @@ async def NS_generate_answer(query: str) -> dict:
         Respond in Arabic, be concise and accurate."""
 
         response = client.chat.completions.create(
-            model="meta-llama/Llama-4-Scout-17B-16E-Instruct",
+            model="openai/gpt-oss-20b",
             messages=[
                 {"role": "system", "content": "Always respond in Arabic using only the provided context."},
                 {"role": "user", "content": prompt}
