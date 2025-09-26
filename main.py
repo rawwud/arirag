@@ -1,15 +1,17 @@
 """
 Al Mujtama News Assistant - FastAPI Application
 A chatbot for the Al Mujtama news magazine with RAG capabilities using Pinecone and Groq.
+Added: GPT-OSS usage estimation and console logging per request + running totals.
 """
 
 import json
 import requests
-# import numpy as np  # Removed to reduce package size for Vercel
 import re
 import logging
 import os
-import time # Added for optional sleep after index creation
+import time
+import math
+import threading
 from groq import Groq
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,10 +23,6 @@ from pinecone import Pinecone
 from pinecone import PineconeApiException
 from typing import Optional
 from together import Together
-# from together import Together  # Removed to reduce package size
-
-# TOG_API_KEY = "4e4f7d38e1f953da9cfd545a6bab84509a52fc4a68e7c68a876eaf9373827e2a"
-# client_tog = Together(api_key=TOG_API_KEY)  # Removed to reduce package size
 
 # Set up logging
 logging.basicConfig(
@@ -66,6 +64,19 @@ INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "testerbedtheone")
 EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", "3072"))
 TOG_API_KEY = os.getenv("TOG_API_KEY", "240f6c9b6abae24fe96f5be23060e38f76b89fd31c121f807615a3dd90385278")
 
+# GPT-OSS pricing & counters (USD prices per 1M tokens)
+GPT_OSS_INPUT_PRICE_PER_1M = 0.15
+GPT_OSS_OUTPUT_PRICE_PER_1M = 0.75
+USD_TO_DZD = 129.0  # change if you want a different FX rate
+
+# Running counters (in-memory since process start)
+gptoss_total_input_tokens = 0
+gptoss_total_output_tokens = 0
+gptoss_total_cost_usd = 0.0
+gptoss_total_cost_dzd = 0.0
+gptoss_total_requests = 0
+gptoss_lock = threading.Lock()
+
 # Initialize Groq Client
 # Global variables
 documents = []
@@ -91,11 +102,13 @@ def initialize_groq_client():
         logger.error(f"Error initializing Groq client: {str(e)}")
         return None
 
+
 def get_groq_client():
     """Get Groq client, initializing if needed"""
     if groq_client is None:
         return initialize_groq_client()
     return groq_client
+
 
 def initialize_tog_client():
     """Initialize TOG client with error handling"""
@@ -108,6 +121,7 @@ def initialize_tog_client():
     except Exception as e:
         logger.error(f"Error initializing TOG client: {str(e)}")
         return None
+
 
 def get_tog_client():
     """Get TOG client, initializing if needed"""
@@ -172,6 +186,7 @@ def get_embedding(text: str) -> list:
         logger.error(f"Error getting embedding: {str(e)}")
         raise
 
+
 def initialize_pinecone() -> bool:
     """Initialize Pinecone connection"""
     global pc, index, pinecone_available
@@ -211,6 +226,7 @@ def initialize_pinecone() -> bool:
         logger.error(f"Error initializing Pinecone: {str(e)}")
         pinecone_available = False
         return False
+
 
 def upsert_documents():
     """Upload documents to Pinecone"""
@@ -253,6 +269,7 @@ def upsert_documents():
         logger.error(f"Error in upsert_documents: {str(e)}")
         raise
 
+
 def retrieve_documents(query: str, top_k: int = 7) -> tuple:
     """Retrieve relevant documents from Pinecone"""
     try:
@@ -287,6 +304,46 @@ def remove_thoughts(text: str) -> str:
     """Remove thought process tags from text"""
     return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
 
+
+def estimate_tokens_from_text(text: str) -> int:
+    """Simple heuristic to estimate tokens from text.
+    Uses word count * 1.3 (approx tokens per word), falls back to char/4 heuristic.
+    """
+    if not text:
+        return 0
+    words = re.findall(r"\w+", text)
+    num_words = len(words)
+    tokens = int(math.ceil(num_words * 1.3))
+    if tokens <= 0:
+        chars = len(text)
+        tokens = max(1, int(math.ceil(chars / 4)))
+    return tokens
+
+
+def log_gptoss_usage(input_tokens: int, output_tokens: int):
+    """Log per-request GPT-OSS estimation and update running totals."""
+    global gptoss_total_input_tokens, gptoss_total_output_tokens
+    global gptoss_total_cost_usd, gptoss_total_cost_dzd, gptoss_total_requests
+
+    # compute cost for this request
+    cost_usd = (input_tokens / 1_000_000.0) * GPT_OSS_INPUT_PRICE_PER_1M + (output_tokens / 1_000_000.0) * GPT_OSS_OUTPUT_PRICE_PER_1M
+    cost_dzd = cost_usd * USD_TO_DZD
+
+    with gptoss_lock:
+        gptoss_total_requests += 1
+        gptoss_total_input_tokens += input_tokens
+        gptoss_total_output_tokens += output_tokens
+        gptoss_total_cost_usd += cost_usd
+        gptoss_total_cost_dzd += cost_dzd
+
+        # Console and logger output
+        logger.info(f"[GPT-OSS EST] Request #{gptoss_total_requests}: in={input_tokens} tok, out={output_tokens} tok, cost=${cost_usd:.6f} (~{cost_dzd:.2f} DZD)")
+        logger.info(f"[GPT-OSS TOTAL] requests={gptoss_total_requests}, total_in={gptoss_total_input_tokens} tok, total_out={gptoss_total_output_tokens} tok, total_cost=${gptoss_total_cost_usd:.6f} (~{gptoss_total_cost_dzd:.2f} DZD)")
+        # also print to stdout so you see it in terminal
+        print(f"[GPT-OSS EST] Request #{gptoss_total_requests}: in={input_tokens} tok, out={output_tokens} tok, cost=${cost_usd:.6f} (~{cost_dzd:.2f} DZD)")
+        print(f"[GPT-OSS TOTAL] requests={gptoss_total_requests}, total_in={gptoss_total_input_tokens} tok, total_out={gptoss_total_output_tokens} tok, total_cost=${gptoss_total_cost_usd:.6f} (~{gptoss_total_cost_dzd:.2f} DZD)")
+
+
 async def classify_query(query: str) -> str:
     """Classify if query needs documents (NS) or can be answered directly (safe)"""
     try:
@@ -318,6 +375,7 @@ async def classify_query(query: str) -> str:
         logger.error(f"Error classifying query: {str(e)}")
         return "NS"  # Default to document retrieval
 
+
 async def safe_generate_answer(query: str) -> dict:
     """Generate answer without document retrieval"""
     try:
@@ -333,18 +391,37 @@ async def safe_generate_answer(query: str) -> dict:
         Respond in Arabic to this greeting or general question: {query}
         Keep responses friendly and brief."""
 
+        messages = [
+            {"role": "system", "content": "Always respond in Arabic, be helpful and professional."},
+            {"role": "user", "content": prompt}
+        ]
+
+        # Estimate input tokens for GPT-OSS pricing if we are using that model
+        input_tokens_est = 0
+        for m in messages:
+            input_tokens_est += estimate_tokens_from_text(m.get("content", ""))
+
         response = client.chat.completions.create(
             model="openai/gpt-oss-20b",
-            messages=[
-                {"role": "system", "content": "Always respond in Arabic, be helpful and professional."},
-                {"role": "user", "content": prompt}
-            ],
+            messages=messages,
             temperature=0.6,
             max_tokens=1024,
         )
 
+        output_text = response.choices[0].message.content
+        output_text_clean = remove_thoughts(output_text)
+
+        # Estimate output tokens
+        output_tokens_est = estimate_tokens_from_text(output_text_clean)
+
+        # Log GPT-OSS estimation (only if model is GPT-OSS)
+        try:
+            log_gptoss_usage(input_tokens_est, output_tokens_est)
+        except Exception as e:
+            logger.error(f"Error logging GPT-OSS usage: {str(e)}")
+
         return {
-            "response": remove_thoughts(response.choices[0].message.content),
+            "response": output_text_clean,
             "reference": "general knowledge"
         }
 
@@ -355,6 +432,7 @@ async def safe_generate_answer(query: str) -> dict:
             "reference": "",
             "error": str(e)
         }
+
 
 async def NS_generate_answer(query: str) -> dict:
     """Generate answer with document retrieval"""
@@ -387,18 +465,37 @@ async def NS_generate_answer(query: str) -> dict:
         
         Respond in Arabic, be concise and accurate."""
 
+        messages = [
+            {"role": "system", "content": "Always respond in Arabic using only the provided context."},
+            {"role": "user", "content": prompt}
+        ]
+
+        # Estimate input tokens for GPT-OSS pricing
+        input_tokens_est = 0
+        for m in messages:
+            input_tokens_est += estimate_tokens_from_text(m.get("content", ""))
+
         response = client.chat.completions.create(
             model="openai/gpt-oss-20b",
-            messages=[
-                {"role": "system", "content": "Always respond in Arabic using only the provided context."},
-                {"role": "user", "content": prompt}
-            ],
+            messages=messages,
             max_tokens=8000,
             temperature=0.6,
         )
 
+        output_text = response.choices[0].message.content
+        output_text_clean = remove_thoughts(output_text)
+
+        # Estimate output tokens
+        output_tokens_est = estimate_tokens_from_text(output_text_clean)
+
+        # Log GPT-OSS estimation
+        try:
+            log_gptoss_usage(input_tokens_est, output_tokens_est)
+        except Exception as e:
+            logger.error(f"Error logging GPT-OSS usage: {str(e)}")
+
         return {
-            "response": remove_thoughts(response.choices[0].message.content),
+            "response": output_text_clean,
             "reference": combined_context
         }
 
@@ -577,15 +674,10 @@ async def read_root(request: Request):
     """Main page"""
     return templates.TemplateResponse("index.html", {"request": request})
 
-
-
-
-
 @app.get("/api/documents")
 async def get_documents():
     """Get documents info"""
     return {"message": "Direct document serving is disabled. Data is accessed via Pinecone."}
-
 
 # ============================================================================
 # STARTUP
